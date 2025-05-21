@@ -4,128 +4,6 @@ from llama_stack_client import LlamaStackClient, Agent
 from datetime import datetime
 import pprint
 
-import re
-from datetime import datetime
-
-
-def format_session_data(session_response):
-    """
-    Process and display session data from the API response in a readable format.
-    Takes the direct response from client.agents.session.retrieve() and formats it.
-    
-    Args:
-        session_response: The response object from client.agents.session.retrieve()
-    
-    Returns:
-        None (prints formatted output)
-    """
-    # Convert to string if it's not already one
-    if not isinstance(session_response, str):
-        session_str = str(session_response)
-    else:
-        session_str = session_response
-    
-    # Extract basic session info
-    session_id_match = re.search(r"session_id='([^']+)'", session_str)
-    session_name_match = re.search(r"session_name='([^']+)'", session_str)
-    started_at_match = re.search(r"started_at=datetime\.datetime\(([^)]+)\)", session_str)
-    
-    session_info = {
-        "session_id": session_id_match.group(1) if session_id_match else "Unknown",
-        "session_name": session_name_match.group(1) if session_name_match else "Unknown",
-        "started_at": started_at_match.group(1).replace(', tzinfo=datetime.timezone.utc', '') if started_at_match else "Unknown"
-    }
-    
-    # Extract and parse tool calls
-    tool_calls = re.findall(r"ToolCall\(arguments=([^)]+), call_id='([^']+)', tool_name='([^']+)'", session_str)
-    
-    # Extract and parse tool responses
-    tool_responses = re.findall(r"ToolResponse\(call_id='([^']+)', content='([^']+)', tool_name='([^']+)'", session_str)
-    
-    # Create a more structured view of the session
-    parsed_session = {
-        "session_info": session_info,
-        "tool_calls": [{"args": tc[0], "call_id": tc[1], "tool_name": tc[2]} for tc in tool_calls],
-        "tool_responses": [{"call_id": tr[0], "content": tr[1], "tool_name": tr[2]} for tr in tool_responses]
-    }
-    
-    # Print the formatted session
-    _print_formatted_session(parsed_session)
-    
-    return parsed_session
-
-def _print_formatted_session(parsed_session):
-    """
-    Helper function to print the parsed session in a readable format
-    """
-    session_info = parsed_session["session_info"]
-    print("=" * 50)
-    print(f"SESSION INFORMATION")
-    print("=" * 50)
-    print(f"Session ID: {session_info['session_id']}")
-    print(f"Session Name: {session_info['session_name']}")
-    print(f"Started At: {session_info['started_at']}")
-    print("\n")
-    
-    print("=" * 50)
-    print(f"TOOL CALLS & RESPONSES SEQUENCE")
-    print("=" * 50)
-    
-    # Create a mapping of call_id to response for easier lookup
-    response_map = {r["call_id"]: r for r in parsed_session["tool_responses"]}
-    
-    # Print each tool call with its corresponding response, if available
-    for i, call in enumerate(parsed_session["tool_calls"]):
-        print(f"\n--- Step {i+1} ---")
-        print(f"Tool: {call['tool_name']}")
-        print(f"Call ID: {call['call_id']}")
-        
-        # Clean up and format the arguments
-        args_str = call["args"]
-        try:
-            # Try to parse as JSON-like structure
-            if "json_args" in args_str:
-                # Extract just the json_args part
-                json_part = re.search(r"'json_args': '?([^']+)'?", args_str)
-                if json_part:
-                    args_display = json_part.group(1)
-                    # Clean up escaping that might make it hard to read
-                    args_display = args_display.replace('\\"', '"').replace('\\\'', "'")
-                    print(f"Arguments: {args_display}")
-                else:
-                    print(f"Arguments: {args_str}")
-            else:
-                print(f"Arguments: {args_str}")
-        except Exception:
-            print(f"Arguments: {args_str}")
-        
-        # Show the response if available
-        if call["call_id"] in response_map:
-            response = response_map[call["call_id"]]
-            print("Response:")
-            
-            # Clean up response content and handle errors
-            content = response["content"]
-            if content.startswith('"') and content.endswith('"'):
-                # Remove outer quotes
-                content = content[1:-1]
-                # Unescape interior quotes
-                content = content.replace('\\"', '"')
-            
-            if "Error when running tool" in content:
-                print(f"  ERROR: {content}")
-            else:
-                # Handle special formatting for grid maps
-                if "|" in content and "\\n" in content:
-                    print("  GRID MAP:")
-                    grid_lines = content.split("\\n")
-                    for line in grid_lines:
-                        if line.strip():
-                            print(f"  {line}")
-                else:
-                    print(f"  {content}")
-                    
-
 def print_grid(width, height, agent_pos, dig_history, treasure_pos, found):
     for y in range(height):
         row = []
@@ -205,9 +83,10 @@ class TreasureHunt:
         return False
 
 # --- Tool Functions ---
-def scan_tool() -> str:
+def scan_tool(json_args: str) -> str:
     """
-    Perform a scan to estimate the Manhattan distance to the hidden treasure for all valid moves.        
+    Perform a scan to estimate the Manhattan distance to the hidden treasure for all valid moves.
+    :param json_args:JSON string , Ignored input (placeholder for tool interface compatibility).    
     :return: JSON string with {"current_distance": int, "distances": {"up": int, "down": int, "left": int, "right": int}} indicating distances from each valid move to treasure.
     """
     current_x, current_y = env.agent_pos
@@ -250,22 +129,16 @@ def think_tool(json_args: str)->str:
     :param json_args: JSON string with {"thought": str}  
     :return: JSON string {"logged": true}
     """
-    try:
-        args = json.loads(json_args)
-        thought = args["thought"]
-        env.Memory.append(f'[{datetime.now()}/Thought]:{thought}')
-        return '{"logged": true}'
-    except Exception as e:
-        cleaned = re.sub(r'[^\x20-\x7E]+', '', json_args)  # keep printable ASCII
-        cleaned = cleaned.replace("'", '"')  # convert single quotes to double quotes
-        cleaned = re.sub(r'\\+', '', cleaned)  # remove backslashes
-        print(f"[Fixed] {cleaned}" )
-        env.Memory.append(f'[{datetime.now()}/Thought]:{cleaned}')
-        return '{"logged": true}'        
+    args = json.loads(json_args)
+    thought = args["thought"]
+    env.Memory.append(f'[{datetime.now()}/Thought]:{thought}')
+    env.last_thought = f'[{datetime.now()}/Thought]:{thought}'
+    return json.dumps({"logged": True})
     
 def move_tool(json_args: str) -> str:
     """
-     Move the agent in a specified direction on the grid.
+    Move the agent in a specified direction on the grid.
+
     :param json_args: JSON string with {"direction": str}, where direction is one of "up", "down", "left", "right".
     :return: JSON string with {"moved": bool, "new_position": [x, y]} indicating success and updated position.
     """
@@ -279,21 +152,21 @@ def move_tool(json_args: str) -> str:
     env.Memory.append(f'[{datetime.now()}/Action]:move_tool({direction}) -> {output}')
     return json.dumps(output)
 
-def dig_tool() -> str:
+def dig_tool(json_args: str) -> str:
     """
     Attempt to dig at the current agent location to uncover the treasure.        
+    :param json_args:JSON string , Ignored input (placeholder for tool interface compatibility).
     :return: JSON string with {"found": bool, "dig_history": [x, y]} indicating if the treasure was discovered and the dig history.
     """
     found = env.dig()
-    # The error "Object of type set is not JSON serializable" " - fixed need to convert the set to list
-    output = {"found": found, "dig_history": list(env.dig_history)}
+    output = {"found": found, "dig_history": env.dig_history}
     s_action = f"[DEBUG] dig_tool -> {output}"
     print(s_action)
     env.last_action = s_action
     env.Memory.append(f'[{datetime.now()}/Action]:dig_tool-> {output}')
     return json.dumps(output)
 
-def grid_map_tool() -> str:
+def grid_map_tool(json_args: str) -> str:
     """
     Return a string representation of the current grid map.
 
@@ -301,26 +174,23 @@ def grid_map_tool() -> str:
       x = dig location
       $ = treasure location
       @ = agent position
-      0 = empty cell    
+      0 = empty cell
+    :param json_args:JSON string , Ignored input (placeholder for tool interface compatibility).
     :return: String showing the grid with agent, treasure, and dig locations.
     """
     output = grid_to_string(env.width, env.height, env.agent_pos, env.dig_history, env.treasure_pos, env.found)
     s_action = f"[DEBUG] grid_map_tool ->\n {output}"
     env.last_action = s_action
     print(s_action)
-    env.Memory.append(f'[{datetime.now()}/Action]:grid_map_tool')
+    env.Memory.append(f'[{datetime.now()}/Action]:grid_map_tool-> {output}')
     return output
 
 SYSTEM_PROMPT="""
-You are a treasure-hunting agent navigating a 2D grid (x, y). Your goal is to find the treasure before running out of turns.
-
-
-For each of the tools, you must emit exactly one JSON function call
-- Only respond with a single JSON function call. The function arguments must be a valid JSON object:
-    - All strings must use double quotes (e.g., "right", not 'right').
-    - Do not embed JSON as a string inside another JSON.
-    - No other text. No comments. No explanation.
+You are a treasure hunting agent navigating a 2D grid (x, y) .
+your goal is to find the treasure before running out of turns.
+For each of the tools, you must emit exactly one JSON function call with valid arguments—no other text or explanation.
 """
+
 
 # --- Main Agent Logic ---
 if __name__ == "__main__":
@@ -330,7 +200,7 @@ if __name__ == "__main__":
     tools = [scan_tool, move_tool, dig_tool,think_tool,grid_map_tool]
     agent = Agent(
         client=client,
-        model="meta-llama/Llama-3.2-3B-Instruct",  # or use "phi4" for faster response
+        model="meta-llama/Llama-3.3-70B-Instruct-Turbo", # or use "phi4" for faster response
         #instructions=SYSTEM_PROMPT,
         instructions=SYSTEM_PROMPT,
         tools=tools,
@@ -369,14 +239,8 @@ if __name__ == "__main__":
         for trace in env.Memory:
             print(f"{trace}")
         print("-----------------------------")
-        session_response = client.agents.session.retrieve(agent_id=agent.agent_id, session_id=session_id)
-        # Match 'error' or 'Error'
-        if re.search(r'\berror\b|\bError\b', str(session_response)):
-            format_session_data(session_response)
-            print(session_response)
-               
-        #format_session_data(session_response)
-        #print(session_response)
+        #session_response = client.agents.session.retrieve(agent_id=agent.agent_id, session_id=session_id)
+        #pprint.pprint(session_response)
         #print_grid(env.width, env.height, env.agent_pos, env.dig_history, env.treasure_pos, env.found)
         if env.found:
             print("🎉 Treasure found at", env.agent_pos)

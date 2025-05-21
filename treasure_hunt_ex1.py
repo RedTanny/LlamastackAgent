@@ -190,36 +190,6 @@ You are a treasure hunting agent navigating a 2D grid (x, y) .
 your goal is to find the treasure before running out of turns.
 """
 
-SYSTEM_TEST_PROMPT="""
-You are an AI tester agent navigating a 2D grid (x, y) your job is to verify that every available tool functions can be invoked correctly.  
-
-Available tools (call them in this order):
-
-- move_tool:
-{
-  "function": "move_tool",
-  "arguments": {"direction": "right"}
-}
-
-move tool directions instructions:
-- move right → (x + 1, y)
-- move left → (x - 1, y)
-- move up → (x, y + 1)
-- move down → (x, y - 1)
-
-The user message includes:
-- `position`: [x, y] — your starting position cell.
-- `grid_size`: {"width": int, "height": int} — the size of the grid.
-- 'last_thought': the last thought or reasoning
-- 'last_action':  the last action which was done
-- 'turns_left': int — how many turns remain before the test session ends.
-
-
-Rules:
-- For each of the following tools, you must emit exactly one JSON function call with valid arguments—no other text or explanation:
-- You must complete testing all tools before `turns_left` reaches 0.  
-"""
-
 # --- Main Agent Logic ---
 if __name__ == "__main__":
     env = TreasureHunt(width=5, height=5)

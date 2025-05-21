@@ -283,46 +283,6 @@ def grid_map_tool() -> str:
     env.Memory.append(f'[{datetime.now()}/Action]:grid_map_tool')
     return output
 
-SYSTEM_PROMPT="""
-You are a treasure-hunting agent navigating a 2D grid (x, y). Your goal is to find the treasure before running out of turns.
-
-Navigation:
-- move right → (x + 1, y)
-- move left → (x - 1, y)
-- move up → (x, y + 1)
-- move down → (x, y - 1)
-
-Each turn you must:
-1) Scan the environment (no args). This returns the current distance and the right/left/up/down distances to the treasure.
-
-2) Think step by step in detail about your next move:
-   - Note values are integers and your current distance to the treasure (CURRENT_DISTANCE)
-   - Compare all possible move distances:
-     * If I move up, distance would be DISTANCES.up
-     * If I move down, distance would be DISTANCES.down
-     * If I move left, distance would be DISTANCES.left
-     * If I move right, distance would be DISTANCES.right
-   - Identify which direction has the SMALLEST distance value
-   - This direction will bring you closest to the treasure
-
-3) Take action:
-   - If current_distance == 0, you are on the treasure cell—immediately dig
-   - Otherwise, move in the direction with the smallest distance value
-
-Always follow this process:
-- First scan to get distances
-- Compare all distance values and find the minimum
-- Move toward the minimum distance (or dig if already at the treasure)
-
-Remember: The direction with the SMALLEST distance value is ALWAYS the best move.
-
-Do not infer or state absolute treasure coordinates. You only know the Manhattan distance from your current cell and its neighbors
-For each of the tools, you must emit exactly one JSON function call
-- Only respond with a single JSON function call. The function arguments must be a valid JSON object:
-    - All strings must use double quotes (e.g., "right", not 'right').
-    - Do not embed JSON as a string inside another JSON.
-    - No other text. No comments. No explanation.
-"""
 
 GRANITE_PROMPT="""
 You are a helpful assistant with access to the following function calls. Your task is to produce a list of function calls necessary to generate a response to the user utterance.
