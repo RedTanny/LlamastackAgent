@@ -142,7 +142,7 @@ def grid_map_tool(json_args: str) -> str:
     :param json_args:JSON string , Ignored input (placeholder for tool interface compatibility).
     :return: String showing the grid with agent, treasure, and dig locations.
     """
-    output = grid_to_string(env.width, env.height, env.agent_pos, env.dig_history, env.treasure_pos, env.found)
+    output = grid_to_string(env.width, env.height, env.agent_pos, env.dig_history, env.treasure_pos)
     s_action = f"[DEBUG] grid_map_tool ->\n {output}"    
     print(s_action)
     env.Memory.append(f'[{datetime.now()}/Action]:grid_map_tool-> {output}')

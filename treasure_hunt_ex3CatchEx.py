@@ -2,7 +2,7 @@ import json
 import random
 from llama_stack_client import LlamaStackClient, Agent
 from datetime import datetime
-
+import re
 
 
 def grid_to_string(width, height, agent_pos, dig_history, treasure_pos):
@@ -214,11 +214,17 @@ if __name__ == "__main__":
 
         print("Agent says:\n", response.output_message.content.strip())
         print(grid_to_string(env.width, env.height, env.agent_pos, env.dig_history, env.treasure_pos))
+        
         print("------------Trace Memory-----------------")
         for trace in env.Memory:
             print(f"{trace}")
         print("-----------------------------")
         
+        session_response = client.agents.session.retrieve(agent_id=agent.agent_id, session_id=session_id)
+        # Match 'error' or 'Error'
+        if re.search(r'\berror\b|\bError\b', str(session_response)):            
+            print(session_response)
+            break
         if env.found:
             print("🎉 Treasure found at", env.agent_pos)
             break
