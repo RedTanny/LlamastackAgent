@@ -39,7 +39,7 @@ class GraniteToolParser(ToolParser):
     def create_tool_call(self, function_name, in_arguments) -> ToolCall:
         print(f"[DEBUG] create_tool_call: {function_name} {in_arguments}")
 
-        if function_name == "think_tool" or function_name == "move_tool":         
+        if function_name == "think_tool":         
             arguments = self.parse_args(function_name, in_arguments)
         else:
             arguments = in_arguments    
@@ -49,34 +49,79 @@ class GraniteToolParser(ToolParser):
             tool_name=function_name,
             arguments=arguments,  # If you have arguments, parse them here
         )
-
+    def get_function_name(self,obj):
+        if isinstance(obj, dict):
+            if "function" in obj:
+                return obj["function"]
+        raise Exception("Key ‘function’ is required but was not found")
+    
+    def get_arguments(self,obj):
+        print("[Trace]:get_arguments")
+        if isinstance(obj, dict):    
+           if "arguments" in obj:
+               args =  obj.get('arguments')
+               print(f"[Trace]:get_arguments -args :{type(args)}")
+               if isinstance(args, dict):                                  
+                    out_arguments = {"args":{"direction":args.get("direction")}}
+               return out_arguments
+        raise Exception("Key arguments is required but was not found")
+    
+    def parse_all_json_blocks(self,raw: str) -> list[dict]:
+        """
+        Extracts every ```json ... ``` block from raw text,
+        strips the fences, and returns a list of parsed JSON objects.
+        """
+        blocks = re.findall(r"```json\s*([\s\S]*?)```", raw)
+        parsed = []
+        for block in blocks:
+            clean = block.strip()
+            parsed.append(json.loads(clean))
+        return parsed
+    def process_json(self,tool_calls,json_obj):
+         # Optional: you can validate/parsing it right away
+            #json_args = json.loads(clean_json)            
+            print(f"[DEBUG:get_tool_calls] call: json_args: {type(json_obj)}")
+            func_name = self.get_function_name(json_obj)                                  
+            if func_name == "scan_tool":
+                        tool_calls.append(
+                            self.create_tool_call("scan_tool", {})
+                        )
+            elif func_name == "move_tool":
+                        # Format: {'json_args': '{"direction":"right"}'}                        
+                        tool_calls.append(
+                            self.create_tool_call("move_tool", self.get_arguments(json_obj))
+                        )
+            elif func_name == "dig_tool":
+                        tool_calls.append(self.create_tool_call("dig_tool", {}))
+            elif func_name == "think_tool":
+                        # Format: {'json_args': '{"thought":"I need to move right"}'}                        
+                        tool_calls.append(self.create_tool_call("think_tool", json_obj))
+            elif func_name == "grid_map_tool":
+                        tool_calls.append(self.create_tool_call("grid_map_tool", {}))
+               
     def get_tool_calls(self, output_message: CompletionMessage):
         #print("[PrintToolParser] get_tool_calls called!")
         tool_calls = []        
         try:
-            print(output_message.content)
-            json_args = json.loads(output_message.content)
-            for call in json_args:
-                print(f"[DEBUG] call: {call}")
-                if "function" in call:
-                    if call["function"] == "scan_tool":
-                        tool_calls.append(
-                            self.create_tool_call("scan_tool", {})
-                        )
-                    elif call["function"] == "move_tool":
-                        # Format: {'json_args': '{"direction":"right"}'}                        
-                        tool_calls.append(
-                            self.create_tool_call("move_tool", call)
-                        )
-                    elif call["function"] == "dig_tool":
-                        tool_calls.append(self.create_tool_call("dig_tool", {}))
-                    elif call["function"] == "think_tool":
-                        # Format: {'json_args': '{"thought":"I need to move right"}'}                        
-                        tool_calls.append(self.create_tool_call("think_tool", call))
-                    elif call["function"] == "grid_map_tool":
-                        tool_calls.append(self.create_tool_call("grid_map_tool", {}))
+            print(f"[raw]{output_message.content}[/raw]")            
+            raw = output_message.content            
+            # Parse all JSON blocks
+            json_objects = self.parse_all_json_blocks(raw)
+
+            # Now you can handle each parsed JSON dict in order:
+            for idx, obj in enumerate(json_objects, start=1):
+                print(f"\n[clean #{idx}]\n{obj} [/clean]")
+                try:
+                    self.process_json(tool_calls,obj)
+                except Exception as e:
+                  print(">>>>>>>>>>>>>>>>>>>>>>>>>")
+                  print(f"[Error:get_tool_calls] {e}/{obj}")
+                  print("<<<<<<<<<<<<<<<<")
+                  
         except Exception as e:
-            print(f"[Error:get_tool_calls] {e}/{output_message.content}")
+                  print(">>>>>>>>>>>>>>>>>>>>>>>>>")
+                  print(f"[Error:get_tool_calls] {e}/{output_message.content}")
+                  print("<<<<<<<<<<<<<<<<")           
         return tool_calls
 
                     
@@ -285,7 +330,7 @@ def grid_map_tool() -> str:
 
 
 GRANITE_PROMPT="""
-You are a helpful assistant with access to the following function calls. Your task is to produce a list of function calls necessary to generate a response to the user utterance.
+You are a helpful assistant with access to the following function calls
 Use the following function calls as required.
 
 Available tools (call them in this order):
@@ -294,7 +339,7 @@ Available tools (call them in this order):
     'type': 'function',
     'function': {
       'name': 'scan_tool',
-      'description': 'Scan the environment to get the current Manhattan distance and the up/down/left/right distances to the treasure from the agent position.',
+      'description': 'Scan the environment to get the current Manhattan distance and the up/down/left/right distances to the treasure from the agent position.',                      
       'parameters': {'type': 'object', 'properties': {}, 'required': []},
       'return': {'type': 'object', 'description': 'A dictionary with {"current_distance": int, "distances": {"up": int, "down": int, "left": int, "right": int}}'}
     }
@@ -325,26 +370,53 @@ Available tools (call them in this order):
       'parameters': {'type': 'object', 'properties': {}, 'required': []},
       'return': {'type': 'object', 'description': '{"found": bool, "dig_history": [[x, y], ...]}'}
     }
-  },
-  {
-    'type': 'function',
-    'function': {
-      'name': 'grid_map_tool',
-      'description': 'Return a string representation of the current grid map with agent, treasure, and dig locations.',
-      'parameters': {'type': 'object', 'properties': {}, 'required': []},
-      'return': {'type': 'string', 'description': 'A string showing the grid with agent, treasure, and dig locations.'}
-    }
-  }
+  }  
 ]
 
 Your goal is to find the treasure on grid (x,y) before running out of turns
-If current_distance == 0, you are on the treasure cell—immediately dig
+
+Always follow the Rules:
+1. Always start by calling **scan_tool**.
+2. The **scan_tool** returns:
+   ```json
+   {
+     "current_distance": int,
+     "distances": {
+       "up": int,
+       "down": int,
+       "left": int,
+       "right": int
+     }
+   }
+3. Movement rule: Important: After scanning, always choose the direction with the lowest distance value. This is crucial for finding the treasure efficiently.    
+4. **No external knowledge**: Do **not** infer, state, or use any absolute grid coordinates or hidden map data.  
+    Only use the Manhattan distance information provided by scan_tool.
+5. **Dig rule** (strict):
+    - You must use **only** the **top-level** `current_distance` to decide digging.
+    - **Never** dig based on any zero found inside the `distances` map.
+    - If `current_distance > 0`, you must move—even if a direction inside `distances` is zero.
+    - If `current_distance == 0`, call **dig_tool** and **no other tool**.
+
+6. After you have dug (i.e. on the next turn), you may call think_tool to log your reaction.
+
+ Example turn when adjacent but not on treasure:
+ — scan_tool → {"current_distance": 1, "distances": {"up":2,"down":2,"left":2,"right":0}}
+ — move_tool → {"direction":"right"}   ← zero in distances = “move,” not “dig”
+
+ Example turn on treasure:
+ — scan_tool → {"current_distance": 0, "distances": {...}}
+ — dig_tool  → {}
 
 For each of the tools, you must emit exactly one JSON function call
 - Only respond with a single JSON function call. The function arguments must be a valid JSON object:
     - All strings must use double quotes (e.g., \"right\", not 'right').
     - Do not embed JSON as a string inside another JSON.
     - No other text. No comments. No explanation.
+Example:
+{
+  "function": "scan_tool",
+  "arguments": {}
+}
 """
 
 # --- Main Agent Logic ---
@@ -352,7 +424,7 @@ if __name__ == "__main__":
     env = TreasureHunt(width=5, height=5)
     client = LlamaStackClient(base_url="http://localhost:8321")
 
-    tools = [scan_tool, move_tool, dig_tool,think_tool,grid_map_tool]
+    tools = [scan_tool, move_tool, dig_tool,think_tool]
     agent = Agent(
         client=client,
         model="granite3.3:8b", #"meta-llama/Llama-3.2-3B-Instruct",  # or use "phi4" for faster response
@@ -364,8 +436,9 @@ if __name__ == "__main__":
         max_infer_iters=100
         
     )
-
-    session_id = agent.create_session("treasure_hunt")
+    rand_int = random.randint(1, 1000)
+    session_name = "treasure_hunt" + str(rand_int)
+    session_id = agent.create_session(session_name)
     print(f'[Debug] Agent SessionId {session_id}')
     max_turns = 15
     env.agent_pos = (0,0)
